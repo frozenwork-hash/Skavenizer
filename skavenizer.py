@@ -403,18 +403,29 @@ def get_synonym(word: str, lang: str = "ru") -> str | None:
                 _warned_no_syn["ru"] = True
             return None
         try:
-            for synset in _ru_wordnet.get_synsets(word_lower):
-                for sense in synset.senses:
-                    name = sense.name
-                    if name.lower() == word_lower:
-                        continue
-                    if " " in name:
-                        continue           # skip multi-word synonyms
-                    if not name[:1].islower():
-                        continue           # skip proper nouns / acronyms
-                    if len(name) > len(word) * 2 + 2:
-                        continue           # skip drastic length changes
-                    return name
+            synsets = _ru_wordnet.get_synsets(word_lower)
+            if not synsets:
+                return None
+            # Only the FIRST (most common) synset of the word.
+            for sense in synsets[0].senses:
+                name = sense.name
+                if name.lower() == word_lower:
+                    continue
+                if " " in name:
+                    continue                    # skip multi-word
+                # Skip obvious acronyms: short AND fully uppercase.
+                if name.isupper() and len(name) <= 4:
+                    continue
+                # Morphological relatives (идти/идёт, человек/человечек).
+                if name.lower().startswith(word_lower) or \
+                   word_lower.startswith(name.lower()):
+                    continue
+                if len(name) > len(word) * 2 + 2:
+                    continue
+                # RuWordNet stores sense names in UPPERCASE.
+                # Return them lowercased — apply_case (in skavenize_word)
+                # will restore the case from the original word.
+                return name.lower()
         except Exception as e:
             if not _warned_no_syn["ru"]:
                 print(f"[Skavenizer] ruwordnet: {e}", file=sys.stderr)
@@ -430,20 +441,24 @@ def get_synonym(word: str, lang: str = "ru") -> str | None:
                 _warned_no_syn["en"] = True
             return None
         try:
-            # Use the ORIGINAL word (not lowercased) so that
-            # _wordnet_exact_synsets can honour capitalization correctly.
-            for synset in _wordnet_exact_synsets(word):
-                for lemma in synset.lemmas(lang="eng"):
-                    name = lemma.name().replace("_", " ")
-                    if name.lower() == word_lower:
-                        continue
-                    if " " in name:
-                        continue           # skip multi-word synonyms
-                    if not name[:1].islower():
-                        continue           # skip proper names
-                    if len(name) > len(word) * 2 + 2:
-                        continue           # skip drastic length changes
-                    return name
+            synsets = _wordnet_exact_synsets(word)
+            if not synsets:
+                return None
+            # Only the FIRST (most common) synset.
+            for lemma in synsets[0].lemmas(lang="eng"):
+                name = lemma.name().replace("_", " ")
+                if name.lower() == word_lower:
+                    continue
+                if " " in name:
+                    continue
+                if not name[:1].islower():
+                    continue
+                if name.lower().startswith(word_lower) or \
+                   word_lower.startswith(name.lower()):
+                    continue          # dog/dogma, fast/fasting
+                if len(name) > len(word) * 2 + 2:
+                    continue
+                return name
         except Exception:
             pass
 
